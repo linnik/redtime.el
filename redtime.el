@@ -22,12 +22,8 @@
   (interactive)
   (when (redtime--tracking-p)
     (error "Already tracking"))
-  (let* ((completions (redtime--build-completions))
-         (selected (completing-read "Select issue:" completions nil t))
-         (issue-id (redtime--lookup-completion selected completions))
-         (message (format "Start tracking '%s'?" selected)))
-    (when (y-or-n-p message)
-      (redtime--write-time issue-id))))
+  (let ((issue-id (redtime--ask-issue)))
+    (redtime--write-time issue-id)))
 
 (defun redtime-stop ()
   "Stop tracking time."
@@ -65,6 +61,12 @@
          (message (format "Discard %s for issue #%s?" spent-string issue-id)))
     (when (y-or-n-p message)
       (redtime--close-time))))
+
+(defun redtime--ask-issue ()
+  "Ask user to select issue from given list of suggestions."
+  (let* ((completions (redtime--build-completions))
+         (selected (completing-read "Select issue:" completions nil t)))
+    (redtime--lookup-completion selected completions)))
 
 (defun redtime--ask-comment ()
   "Ask user to write a comment on time entry."
