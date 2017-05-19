@@ -7,11 +7,14 @@
 ;;; Code:
 (require 'elmine)
 
-(defvaralias 'redtime/host 'elmine/host)
-(defvaralias 'redtime/api-key 'elmine/api-key)
+(defvar redtime/host nil
+  "The default host of the redmine.")
+
+(defvar redtime/api-key nil
+  "The default API key for the redmine.")
 
 (defvar redtime/tracker-location "~/.redtime"
-  "Location to the file where stored currently tracked time.")
+  "Location to the file where currently tracked time is stored.")
 
 (defvar redtime--activities-cache nil
   "Private var with activities cache for current Redmine project.")
@@ -40,6 +43,9 @@
     (when (y-or-n-p message)
       (let* ((activity-id (redtime--ask-activity))
              (comment (redtime--ask-comment))
+
+             (redmine-host redtime/host)
+             (redmine-api-key redtime/api-key)
              (response (elmine/create-time-entry
                         :issue_id issue-id :activity_id activity-id
                         :hours spent-hours :comments comment))
@@ -70,6 +76,9 @@
          (hours (redtime--ask-manual-hours))
          (activity-id (redtime--ask-activity))
          (comment (redtime--ask-comment))
+
+         (redmine-host redtime/host)
+         (redmine-api-key redtime/api-key)
          (response (elmine/create-time-entry
                     :issue_id issue-id :activity_id activity-id
                     :spent_on date :hours hours :comments comment))
@@ -103,7 +112,9 @@
 (defun redtime--ask-activity ()
   "Ask user to select activity."
   (unless redtime--activities-cache
-    (setq redtime--activities-cache (elmine/get-time-entry-activities)))
+    (let ((redmine-host redtime/host)
+          (redmine-api-key redtime/api-key))
+      (setq redtime--activities-cache (elmine/get-time-entry-activities))))
   (let* ((completions (mapcar (lambda (obj) (cons
                                              (get-decode :name obj)
                                              (plist-get obj :id) ))
@@ -113,7 +124,9 @@
 
 (defun redtime--build-completions ()
   "Build completions list."
-  (mapcar 'redtime--build-completion (elmine/get-issues)))
+  (let ((redmine-host redtime/host)
+        (redmine-api-key redtime/api-key))
+    (mapcar 'redtime--build-completion (elmine/get-issues))))
 
 (defun redtime--lookup-completion (completion completions)
   "Lookup COMPLETION in COMPLETIONS and return issue-id."
