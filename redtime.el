@@ -62,6 +62,31 @@
     (when (y-or-n-p message)
       (redtime--close-time))))
 
+(defun redtime-manual ()
+  "Manually track time for specific date."
+  (interactive)
+  (let* ((issue-id (redtime--ask-issue))
+         (date (redtime--ask-manual-date))
+         (hours (redtime--ask-manual-hours))
+         (activity-id (redtime--ask-activity))
+         (comment (redtime--ask-comment))
+         (response (elmine/create-time-entry
+                    :issue_id issue-id :activity_id activity-id
+                    :spent_on date :hours hours :comments comment))
+         (errors (plist-get response :errors)))
+    (if errors
+        (error (format "Error: %s" (car errors)))
+      (message (format "Successfully tracked %s hours for issue #%s on %s"
+                       hours issue-id date)))))
+
+(defun redtime--ask-manual-date ()
+  "Ask user to pick a date for manual time entry."
+  (format-time-string "%Y-%m-%d" (org-time-string-to-time (org-read-date))))
+
+(defun redtime--ask-manual-hours ()
+  "Ask user to enter amount of spent hours for manual time entry."
+  (read-string "Enter hours: "))
+
 (defun redtime--ask-issue ()
   "Ask user to select issue from given list of suggestions."
   (let* ((completions (redtime--build-completions))
