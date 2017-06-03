@@ -8,6 +8,7 @@
 (require 'elmine)
 (require 'redtime-config)
 (require 'redtime-track)
+(require 'redtime-report)
 
 (defvar redtime--activities-cache nil
   "Private var with activities cache for current Redmine project.")
