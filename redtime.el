@@ -6,15 +6,7 @@
 
 ;;; Code:
 (require 'elmine)
-
-(defvar redtime/host nil
-  "The default host of the redmine.")
-
-(defvar redtime/api-key nil
-  "The default API key for the redmine.")
-
-(defvar redtime/tracker-location "~/.redtime"
-  "Location to the file where currently tracked time is stored.")
+(require 'redtime-config)
 
 (defvar redtime--activities-cache nil
   "Private var with activities cache for current Redmine project.")
