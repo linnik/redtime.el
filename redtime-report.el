@@ -111,10 +111,13 @@ Specify KEY for resetting direction on specific column."
 (defun redtime-report-sort (key)
   "Perform sort operation on KEY column of reports table."
   (redtime--swap-sort-direction key)
-  (let ((sort-key (car redtime--report-sort))
-        (sort-order (cdr redtime--report-sort)))
+  (let* ((sort-key (car redtime--report-sort))
+         (sort-order (cdr redtime--report-sort))
+         (sort-func (if (not (member sort-key '(:issue :hours)))
+                        'string-lessp
+                      '<)))
     (setq redtime--report-cache
-          (cl-sort redtime--report-cache 'string-lessp
+          (cl-sort redtime--report-cache sort-func
                    :key #'(lambda (line) (plist-get line sort-key))))
     (when (eq sort-order :descending)
       (setq redtime--report-cache (reverse redtime--report-cache))))
@@ -202,30 +205,32 @@ Specify KEY for resetting direction on specific column."
   "Construct report footer."
   "|-\n")
 
-(defun redtime--report-row (object)
-  "Construct single report table row from OBJECT."
+(defun redtime--report-row (row)
+  "Construct single report table ROW."
   (let ((row-cells (mapcar
-                   (apply-partially 'plist-get object)
-                   redtime-report-columns)))
+                    (apply-partially 'redtime--report-fmt-cell row)
+                    redtime-report-columns)))
     (concat "|" (mapconcat 'identity row-cells "|") "|\n")))
+
+(defun redtime--report-fmt-cell (row column-name)
+  "Format single table cell from ROW COLUMN-NAME."
+  (let ((value (plist-get row column-name)))
+    (if (member column-name '(:issue :hours))
+        (number-to-string value)
+      value)))
 
 (defun redtime--report-process (object)
   "Extract required data from Redmine response OBJECT."
-  (let* ((activity-name (plist-get (plist-get object :activity) :name))
-         (issue-id (number-to-string (plist-get (plist-get object :issue) :id)))
-         (user (plist-get object :user))
-         (user-id (plist-get user :id))
-         (user-name (get-decode :name user))
-         (hours (number-to-string (plist-get object :hours)))
-         (spent_on (plist-get object :spent_on))
-         (comments (get-decode :comments object)))
-    (list :date spent_on
-          :activity activity-name
-          :issue issue-id
-          :user-id user-id
-          :user-name user-name
-          :hours hours
-          :comment comments)))
+  (let* ((activity (plist-get object :activity))
+         (issue (plist-get object :issue))
+         (user (plist-get object :user)))
+    (list :date (plist-get object :spent_on)
+          :activity (plist-get activity :name)
+          :issue (plist-get issue :id)
+          :user-id (plist-get user :id)
+          :user-name (get-decode :name user)
+          :hours (plist-get object :hours)
+          :comment (get-decode :comments object))))
 
 (defun redtime--report-build-cache ()
   "Fetch time entries from Redmine."
