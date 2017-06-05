@@ -221,8 +221,9 @@ Specify KEY for resetting direction on specific column."
 
 (defun redtime--report-build-cache ()
   "Fetch time entries from Redmine."
-  (let* ((redmine-host redtime/host)
-         (redmine-api-key redtime/api-key)
+  (let* ((redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf))
          (offset 0) (limit 100)
          (filters `(:limit ,limit :offset ,offset))
          (entries nil))
@@ -239,7 +240,7 @@ Specify KEY for resetting direction on specific column."
 (defun redtime-report-filter-by-user ()
   "Show report table entries only for selected user."
   (interactive)
-  (setq redtime--report-user (call-interactively 'redtime-set-user))
+  (setq redtime--report-user (redtime--report-ask-user))
   (redtime--report-build-cache)
   (redtime-update-buffer))
 
@@ -258,8 +259,9 @@ Specify KEY for resetting direction on specific column."
 
 (defun redtime--user-completions ()
   "Build completions list."
-  (let ((redmine-host redtime/host)
-        (redmine-api-key redtime/api-key))
+  (let* ((redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf)))
     (mapcar 'redtime--build-user-completion
             (redtime/get-project-memberships redtime/project-id))))
 

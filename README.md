@@ -4,8 +4,11 @@ Track time for Redmine project with Emacs
 Add following to your init.el:
 
 ``` emacs-lisp
-(setq redtime/host "https://your-redmine-host.org")
-(setq redtime/api-key "your-api-key")
+(add-to-list 'load-path "/path/to/redtime.el/")
+
+(require 'redtime)
+(add-to-list 'redtime/hosts '("https://your-redmine-host.org" . "api-key-a"))
+(add-to-list 'redtime/hosts '("https://another-redmine.org" . "api-key-b"))
 ```
 
 It is highly recommended to have `flx` package installed alongside with `redtime`.

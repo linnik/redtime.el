@@ -38,9 +38,9 @@
     (when (y-or-n-p message)
       (let* ((activity-id (redtime--ask-activity))
              (comment (redtime--ask-comment))
-
-             (redmine-host redtime/host)
-             (redmine-api-key redtime/api-key)
+             (redmine-conf (redtime-get-conf))
+             (redmine-host (car redmine-conf))
+             (redmine-api-key (cdr redmine-conf))
              (response (elmine/create-time-entry
                         :issue_id issue-id :activity_id activity-id
                         :hours spent-hours :comments comment))
@@ -71,9 +71,9 @@
          (hours (redtime--ask-manual-hours))
          (activity-id (redtime--ask-activity))
          (comment (redtime--ask-comment))
-
-         (redmine-host redtime/host)
-         (redmine-api-key redtime/api-key)
+         (redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf))
          (response (elmine/create-time-entry
                     :issue_id issue-id :activity_id activity-id
                     :spent_on date :hours hours :comments comment))
@@ -107,8 +107,9 @@
 (defun redtime--ask-activity ()
   "Ask user to select activity."
   (unless redtime--activities-cache
-    (let ((redmine-host redtime/host)
-          (redmine-api-key redtime/api-key))
+    (let* ((redmine-conf (redtime-get-conf))
+           (redmine-host (car redmine-conf))
+           (redmine-api-key (cdr redmine-conf)))
       (setq redtime--activities-cache (elmine/get-time-entry-activities))))
   (let* ((completions (mapcar (lambda (obj) (cons
                                              (get-decode :name obj)
@@ -119,8 +120,9 @@
 
 (defun redtime--build-completions ()
   "Build completions list."
-  (let ((redmine-host redtime/host)
-        (redmine-api-key redtime/api-key))
+  (let* ((redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf)))
     (mapcar 'redtime--build-completion (elmine/get-issues))))
 
 (defun redtime--lookup-completion (completion completions)
