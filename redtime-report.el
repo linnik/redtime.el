@@ -8,6 +8,7 @@
 (require 'cl-lib)
 (require 'redtime-config)
 (require 'redtime-api)
+(require 'redtime-project)
 
 (defvar redtime-report-columns
   '(:date :user-name :activity :issue :hours :comment)
@@ -259,11 +260,12 @@ Specify KEY for resetting direction on specific column."
 
 (defun redtime--user-completions ()
   "Build completions list."
-  (let* ((redmine-conf (redtime-get-conf))
+  (let* ((project-id (redtime-get-project-id))
+         (redmine-conf (redtime-get-conf))
          (redmine-host (car redmine-conf))
          (redmine-api-key (cdr redmine-conf)))
     (mapcar 'redtime--build-user-completion
-            (redtime/get-project-memberships redtime/project-id))))
+            (redtime/get-project-memberships project-id))))
 
 (defun redtime--lookup-user-completion (completion completions)
   "Lookup COMPLETION in COMPLETIONS and return issue-id."
