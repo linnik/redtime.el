@@ -49,6 +49,7 @@ by reordering or removing keywords in this list.")
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "s a") #'redtime-report-sort-by-activity)
     (define-key map (kbd "s d") #'redtime-report-sort-by-date)
+    (define-key map (kbd "s u") #'redtime-report-sort-by-username)
     (define-key map (kbd "s i") #'redtime-report-sort-by-issue)
     (define-key map (kbd "s h") #'redtime-report-sort-by-hours)
     (define-key map (kbd "f u") #'redtime-report-filter-by-user)
@@ -129,6 +130,12 @@ Specify KEY for resetting direction on specific column."
   "Sort reports table by activity."
   (interactive)
   (redtime-report-sort :activity)
+  (redtime-update-buffer))
+
+(defun redtime-report-sort-by-username ()
+  "Sort reports table by username."
+  (interactive)
+  (redtime-report-sort :user-name)
   (redtime-update-buffer))
 
 (defun redtime-report-sort-by-issue ()
@@ -277,7 +284,6 @@ Specify KEY for resetting direction on specific column."
          (user-id (plist-get user :id))
          (user-name (get-decode :name user)))
     (cons user-name user-id)))
-
 
 (provide 'redtime-report)
 ;;; redtime-report.el ends here
