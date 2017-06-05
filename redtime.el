@@ -7,6 +7,7 @@
 ;;; Code:
 (require 'elmine)
 (require 'redtime-config)
+(require 'redtime-api)
 (require 'redtime-track)
 (require 'redtime-report)
 
@@ -132,9 +133,5 @@
          (subject (get-decode :subject issue))
          (issue-string (format "#%s %s" issue-id subject)))
     (cons issue-string issue-id)))
-
-(defun get-decode (key object)
-  "Get and decode KEY from OBJECT."
-  (decode-coding-string (plist-get object key) 'utf-8))
 
 ;;; redtime.el ends here
