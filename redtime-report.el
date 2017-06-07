@@ -16,6 +16,9 @@
 You can customize report table content
 by reordering or removing keywords in this list.")
 
+(defvar redtime-report-limit 42
+  "Maximum number of time entries to display in reports table.")
+
 (defvar redtime-report-sorting-field :date
   "Default sorting field in reports table.")
 
@@ -153,18 +156,38 @@ Specify KEY for resetting direction on specific column."
   (redtime-report-sort :hours)
   (redtime-update-buffer))
 
-;; (defun redtime-report-select-date ()
-;;   "X.")
+(defun prefix-numeric-nullable-value (val &optional default)
+  "Same as 'prefix-numeric-value, but in case if VAL is nil, return DEFAULT."
+  (if (not (null val))
+      (prefix-numeric-value val)
+    default))
 
-(defun redtime-list-entries ()
-  "List time entries."
-  (interactive)
+(defun redtime-pop ()
+  "Pop redtime buffer."
   (let* ((buffer-read-only t)
          (buf (get-buffer-create *redtime-buffer-name*)))
     (pop-to-buffer buf)
-    (when (not (eq major-mode 'redtime-mode))
-      (redtime-mode))
-    (redtime--report-build-cache)
+    (unless (eq major-mode 'redtime-mode)
+      (redtime-mode))))
+
+(defun redtime-last-entries (&optional N)
+  "List last time entries.
+Accepts numeric prefix argument N, which limits amount of entries to fetch."
+  (interactive "P")
+  (redtime-pop)
+  (let ((limit (prefix-numeric-nullable-value N redtime-report-limit)))
+    (redtime--report-build-cache `(:limit ,limit))
+    (redtime-update-buffer)))
+
+(defun redtime-day-entries (&optional N)
+  "List time entries for a specific day (prompts user).
+Accepts numeric prefix argument N, which limits amount of entries to fetch."
+  (interactive "P")
+  (redtime-pop)
+  (let ((limit (prefix-numeric-nullable-value N redtime-report-limit))
+        (spent_on (format-time-string
+                   "%Y-%m-%d" (org-time-string-to-time (org-read-date)))))
+    (redtime--report-build-cache `(:spent_on ,spent_on :limit ,limit))
     (redtime-update-buffer)))
 
 (defun redtime-update-buffer ()
@@ -232,20 +255,20 @@ Specify KEY for resetting direction on specific column."
           :hours (plist-get object :hours)
           :comment (get-decode :comments object))))
 
-(defun redtime--report-build-cache ()
-  "Fetch time entries from Redmine."
+(defun redtime--report-build-cache (&optional filters)
+  "Fetch time entries from Redmine, with optional FILTERS."
   (let* ((redmine-conf (redtime-get-conf))
          (redmine-host (car redmine-conf))
          (redmine-api-key (cdr redmine-conf))
-         (offset 0) (limit 100)
+         (offset 0) (limit redtime-report-limit)
+         (given-filters filters)
          (filters `(:limit ,limit :offset ,offset))
          (entries nil))
-    (when (not (equal redtime--report-user nil))
-      ;; plist-put modifies var in global scope?
-      ;; (setq filters (plist-put filters :user_id redtime--report-user))
-      (setq filters
-            `(:offset ,offset :limit ,limit :user_id ,redtime--report-user)))
-
+    (unless (null redtime--report-user)
+      (setq filters (plist-put filters :user_id redtime--report-user)))
+    (when given-filters
+      (cl-loop for (key value) on filters by #'cddr
+               do (setq filters (plist-put filters key value))))
     (setq entries (apply 'redtime/get-time-entries filters))
     (redtime--reset-sorting)
     (setq redtime--report-cache (mapcar 'redtime--report-process entries))))
