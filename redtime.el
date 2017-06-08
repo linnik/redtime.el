@@ -6,15 +6,10 @@
 
 ;;; Code:
 (require 'elmine)
-
-(defvar redtime/host nil
-  "The default host of the redmine.")
-
-(defvar redtime/api-key nil
-  "The default API key for the redmine.")
-
-(defvar redtime/tracker-location "~/.redtime"
-  "Location to the file where currently tracked time is stored.")
+(require 'redtime-config)
+(require 'redtime-api)
+(require 'redtime-track)
+(require 'redtime-report)
 
 (defvar redtime--activities-cache nil
   "Private var with activities cache for current Redmine project.")
@@ -43,9 +38,9 @@
     (when (y-or-n-p message)
       (let* ((activity-id (redtime--ask-activity))
              (comment (redtime--ask-comment))
-
-             (redmine-host redtime/host)
-             (redmine-api-key redtime/api-key)
+             (redmine-conf (redtime-get-conf))
+             (redmine-host (car redmine-conf))
+             (redmine-api-key (cdr redmine-conf))
              (response (elmine/create-time-entry
                         :issue_id issue-id :activity_id activity-id
                         :hours spent-hours :comments comment))
@@ -76,9 +71,9 @@
          (hours (redtime--ask-manual-hours))
          (activity-id (redtime--ask-activity))
          (comment (redtime--ask-comment))
-
-         (redmine-host redtime/host)
-         (redmine-api-key redtime/api-key)
+         (redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf))
          (response (elmine/create-time-entry
                     :issue_id issue-id :activity_id activity-id
                     :spent_on date :hours hours :comments comment))
@@ -112,8 +107,9 @@
 (defun redtime--ask-activity ()
   "Ask user to select activity."
   (unless redtime--activities-cache
-    (let ((redmine-host redtime/host)
-          (redmine-api-key redtime/api-key))
+    (let* ((redmine-conf (redtime-get-conf))
+           (redmine-host (car redmine-conf))
+           (redmine-api-key (cdr redmine-conf)))
       (setq redtime--activities-cache (elmine/get-time-entry-activities))))
   (let* ((completions (mapcar (lambda (obj) (cons
                                              (get-decode :name obj)
@@ -124,8 +120,9 @@
 
 (defun redtime--build-completions ()
   "Build completions list."
-  (let ((redmine-host redtime/host)
-        (redmine-api-key redtime/api-key))
+  (let* ((redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf)))
     (mapcar 'redtime--build-completion (elmine/get-issues))))
 
 (defun redtime--lookup-completion (completion completions)
@@ -138,59 +135,5 @@
          (subject (get-decode :subject issue))
          (issue-string (format "#%s %s" issue-id subject)))
     (cons issue-string issue-id)))
-
-(defun get-decode (key object)
-  "Get and decode KEY from OBJECT."
-  (decode-coding-string (plist-get object key) 'utf-8))
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Functions for time tracking ;;
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defun redtime--tracking-p ()
-  "Predicate to check if currently tracking any issue."
-  (file-exists-p redtime/tracker-location))
-
-(defun redtime--close-time ()
-  "Remove any persisted time records."
-  (when (file-exists-p redtime/tracker-location)
-    (delete-file redtime/tracker-location)))
-
-(defun redtime--write-time (issue-id)
-  "Write current time with ISSUE-ID to a file."
-  (let ((string (format "%d %s\n" issue-id (float-time)))
-        (filename redtime/tracker-location) (mustbenew t)
-        (end nil) (append nil) (lockname nil) (visit :no-message) ;
-        )
-    (write-region string end filename append visit lockname mustbenew)))
-
-(defun redtime--read-time ()
-  "Read time of currently tracking issue ."
-  (redtime--parse-entry (read-file redtime/tracker-location)))
-
-(defun read-file (location)
-  "Read file at LOCATION."
-  (with-temp-buffer
-    (insert-file-contents location)
-    (buffer-substring-no-properties
-     (point-min)
-     (point-max))))
-
-(defun redtime--parse-entry (string)
-  "Parse STRING into '(issue-id . issue-float-time) list."
-  (let* ((content (delete "" (split-string string)))
-         (issue-id (car content))
-         (issue-raw-time (cadr content))
-         (issue-float-time (string-to-number issue-raw-time)))
-    (cons issue-id issue-float-time)))
-
-(defun redtime--humanify-seconds (seconds)
-  "Formats SECONDS for humans."
-  (format-seconds "%Y, %D, %H, %M, %z%S" seconds))
-
-(defun redtime--fmt-hours (seconds)
-  "Format SECONDS to Redmine hours format."
-  (format-seconds "%h:%m" seconds))
 
 ;;; redtime.el ends here
