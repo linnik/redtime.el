@@ -10,6 +10,8 @@
 (require 'redtime-api)
 (require 'redtime-project)
 
+;;; public vars
+
 (defvar redtime-report-columns
   '(:date :user-name :activity :issue :hours :comment)
   "Columns for report table.
@@ -24,6 +26,8 @@ by reordering or removing keywords in this list.")
 
 (defvar redtime-report-sorting-order :descending
   "Default sorting order in reports table.  Either :descending or :ascending.")
+
+;;; private vars
 
 (defvar redtime--report-column-labels
   (list :date "Date"
@@ -48,6 +52,8 @@ by reordering or removing keywords in this list.")
 (defvar *redtime-buffer-name* "*Redtime*"
   "Name of the redtime buffer.")
 
+;;; mode definition
+
 (defvar redtime-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "s a") #'redtime-report-sort-by-activity)
@@ -65,6 +71,14 @@ by reordering or removing keywords in this list.")
     map)
   "Keymap for `redtime-mode'.")
 
+(define-derived-mode redtime-mode read-only-mode "Redtime"
+  "Major mode for tracking time with Redmine
+
+\\{redtime-mode-map}"
+  (setq truncate-lines t))
+
+;;; macro helpers
+
 (defmacro redtime--with-writable-buffer (&rest body)
   "Evaluate BODY as if the current buffer was not in `read-only-mode'."
   (declare (indent 0) (debug t))
@@ -80,17 +94,173 @@ Similar to `save-excursion' but only restore the point."
        ,@body
        (goto-char (min ,point (point-max))))))
 
-(define-derived-mode redtime-mode read-only-mode "Redtime"
-  "Major mode for tracking time with Redmine
+(defun prefix-numeric-nullable-value (val &optional default)
+  "Same as 'prefix-numeric-value, but in case if VAL is nil, return DEFAULT."
+  (if (not (null val))
+      (prefix-numeric-value val)
+    default))
 
-\\{redtime-mode-map}"
-  (setq truncate-lines t))
+;;; reports core
 
 (defun redtime-quit ()
   "Kill the buffer quitting the window."
   (interactive)
   (setq redtime--report-cache nil)
   (quit-window t))
+
+(defun redtime-pop ()
+  "Pop redtime buffer."
+  (let* ((buffer-read-only t)
+         (buf (get-buffer-create *redtime-buffer-name*)))
+    (pop-to-buffer buf)
+    (unless (eq major-mode 'redtime-mode)
+      (redtime-mode))))
+
+(defun redtime-last-entries (&optional N)
+  "List last time entries.
+Accepts numeric prefix argument N, which limits amount of entries to fetch."
+  (interactive "P")
+  (redtime-pop)
+  (let ((limit (prefix-numeric-nullable-value N redtime-report-limit)))
+    (redtime--report-build-cache `(:limit ,limit))
+    (redtime-update-buffer)))
+
+(defun redtime-day-entries (&optional N)
+  "List time entries for a specific day (prompts user).
+Accepts numeric prefix argument N, which limits amount of entries to fetch."
+  (interactive "P")
+  (redtime-pop)
+  (let ((limit (prefix-numeric-nullable-value N redtime-report-limit))
+        (spent_on (format-time-string
+                   "%Y-%m-%d" (org-time-string-to-time (org-read-date)))))
+    (redtime--report-build-cache `(:spent_on ,spent_on :limit ,limit))
+    (redtime-update-buffer)))
+
+(defun redtime-update-buffer ()
+  "Update the current buffer contents."
+  (interactive)
+  (redtime--save-point
+    (redtime--with-writable-buffer
+      (delete-region (point-min) (point-max))
+      (let ((table-rows (redtime--report)))
+        (dolist (elt table-rows )
+          (insert elt)))
+      (org-table-align))))
+
+(defun redtime--report-build-cache (&optional filters)
+  "Fetch time entries from Redmine, with optional FILTERS."
+  (let* ((redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf))
+         (offset 0) (limit redtime-report-limit)
+         (given-filters filters)
+         (filters `(:limit ,limit :offset ,offset))
+         (entries nil))
+    (unless (null redtime--report-user)
+      (setq filters (plist-put filters :user_id redtime--report-user)))
+    (when given-filters
+      (cl-loop for (key value) on filters by #'cddr
+               do (setq filters (plist-put filters key value))))
+    (setq entries (apply 'redtime/get-time-entries filters))
+    (redtime--reset-sorting)
+    (setq redtime--report-cache (mapcar 'redtime--report-process entries))))
+
+(defun redtime--report-process (object)
+  "Extract required data from Redmine response OBJECT."
+  (let* ((activity (plist-get object :activity))
+         (issue (plist-get object :issue))
+         (user (plist-get object :user)))
+    (list :date (plist-get object :spent_on)
+          :activity (plist-get activity :name)
+          :issue (plist-get issue :id)
+          :user-id (plist-get user :id)
+          :user-name (get-decode :name user)
+          :hours (plist-get object :hours)
+          :comment (get-decode :comments object))))
+
+;;; report table building
+
+(defun redtime--report ()
+  "Build report table."
+  (let ((table '()))
+    (add-to-list 'table (redtime--report-header) t)
+    (mapcar
+     #'(lambda (value) (add-to-list 'table (redtime--report-row value) t))
+     redtime--report-cache)
+    (add-to-list 'table (redtime--report-footer) t)))
+
+(defun redtime--report-header ()
+  "Construct report header."
+  (let ((labels (mapcar
+                 (apply-partially 'plist-get redtime--report-column-labels)
+                 redtime-report-columns)))
+    (concat "|-" "\n"
+            "|"  (mapconcat 'identity labels "|") "|" "\n"
+            "|-" "\n")))
+
+(defun redtime--report-footer ()
+  "Construct report footer."
+  (concat "|-" "\n"))
+
+(defun redtime--report-row (row)
+  "Construct single report table ROW."
+  (let ((row-cells (mapcar
+                    (apply-partially 'redtime--report-fmt-cell row)
+                    redtime-report-columns)))
+    (concat "|" (mapconcat 'identity row-cells "|") "|\n")))
+
+(defun redtime--report-fmt-cell (row column-name)
+  "Format single table cell from ROW COLUMN-NAME."
+  (let ((value (plist-get row column-name)))
+    (if (member column-name '(:issue :hours))
+        (number-to-string value)
+      value)))
+
+;;; filters
+
+(defun redtime-report-filters-clear ()
+  "Clear reports table of any applied filters."
+  (interactive)
+  (setq redtime--report-user nil)
+  (redtime--report-build-cache)
+  (redtime-update-buffer))
+
+;;; user filtering
+
+(defun redtime-report-filter-by-user ()
+  "Show report table entries only for selected user."
+  (interactive)
+  (setq redtime--report-user (redtime--report-ask-user))
+  (redtime--report-build-cache)
+  (redtime-update-buffer))
+
+(defun redtime--report-ask-user ()
+  "Prompt to select redtime user from given list of suggestions."
+  (let* ((completions (redtime--user-completions))
+         (selected (completing-read "Select user:" completions nil t)))
+    (redtime--lookup-user-completion selected completions)))
+
+(defun redtime--user-completions ()
+  "Build completions list."
+  (let* ((project-id (redtime-get-project-id))
+         (redmine-conf (redtime-get-conf))
+         (redmine-host (car redmine-conf))
+         (redmine-api-key (cdr redmine-conf)))
+    (mapcar 'redtime--build-user-completion
+            (redtime/get-project-memberships project-id))))
+
+(defun redtime--lookup-user-completion (completion completions)
+  "Lookup COMPLETION in COMPLETIONS and return issue-id."
+  (cdr (assoc completion completions)))
+
+(defun redtime--build-user-completion (membership)
+  "Build single completion entry from MEMBERSHIP object."
+  (let* ((user (plist-get membership :user))
+         (user-id (plist-get user :id))
+         (user-name (get-decode :name user)))
+    (cons user-name user-id)))
+
+;;; sorting
 
 (defun redtime--reset-sorting (&optional key)
   "Reset reports table sorting method to default column-direction pair.
@@ -155,163 +325,6 @@ Specify KEY for resetting direction on specific column."
   (interactive)
   (redtime-report-sort :hours)
   (redtime-update-buffer))
-
-(defun prefix-numeric-nullable-value (val &optional default)
-  "Same as 'prefix-numeric-value, but in case if VAL is nil, return DEFAULT."
-  (if (not (null val))
-      (prefix-numeric-value val)
-    default))
-
-(defun redtime-pop ()
-  "Pop redtime buffer."
-  (let* ((buffer-read-only t)
-         (buf (get-buffer-create *redtime-buffer-name*)))
-    (pop-to-buffer buf)
-    (unless (eq major-mode 'redtime-mode)
-      (redtime-mode))))
-
-(defun redtime-last-entries (&optional N)
-  "List last time entries.
-Accepts numeric prefix argument N, which limits amount of entries to fetch."
-  (interactive "P")
-  (redtime-pop)
-  (let ((limit (prefix-numeric-nullable-value N redtime-report-limit)))
-    (redtime--report-build-cache `(:limit ,limit))
-    (redtime-update-buffer)))
-
-(defun redtime-day-entries (&optional N)
-  "List time entries for a specific day (prompts user).
-Accepts numeric prefix argument N, which limits amount of entries to fetch."
-  (interactive "P")
-  (redtime-pop)
-  (let ((limit (prefix-numeric-nullable-value N redtime-report-limit))
-        (spent_on (format-time-string
-                   "%Y-%m-%d" (org-time-string-to-time (org-read-date)))))
-    (redtime--report-build-cache `(:spent_on ,spent_on :limit ,limit))
-    (redtime-update-buffer)))
-
-(defun redtime-update-buffer ()
-  "Update the current buffer contents."
-  (interactive)
-  (redtime--save-point
-    (redtime--with-writable-buffer
-      (delete-region (point-min) (point-max))
-      (let ((table-rows (redtime--report)))
-        (dolist (elt table-rows )
-          (insert elt)))
-      (org-table-align))))
-
-(defun redtime--report ()
-  "Build report table."
-  (let ((table '()))
-    (add-to-list 'table (redtime--report-header) t)
-    ;; (mapcar #'(lambda (val) (add-to-list 'table val t)) (redtime--report-body))
-    (mapcar
-     #'(lambda (value) (add-to-list 'table (redtime--report-row value) t))
-     redtime--report-cache)
-    (add-to-list 'table (redtime--report-footer) t)))
-
-(defun redtime--report-header ()
-  "Return report header."
-  (let ((labels (mapcar
-                 (apply-partially 'plist-get redtime--report-column-labels)
-                 redtime-report-columns)))
-    (concat "|-" "\n"
-            "|"  (mapconcat 'identity labels "|") "|" "\n"
-            "|-" "\n")))
-
-(defun redtime--report-body ()
-  "Construct report body."
-  (mapcar 'redtime--report-row redtime--report-cache))
-
-(defun redtime--report-footer ()
-  "Construct report footer."
-  "|-\n")
-
-(defun redtime--report-row (row)
-  "Construct single report table ROW."
-  (let ((row-cells (mapcar
-                    (apply-partially 'redtime--report-fmt-cell row)
-                    redtime-report-columns)))
-    (concat "|" (mapconcat 'identity row-cells "|") "|\n")))
-
-(defun redtime--report-fmt-cell (row column-name)
-  "Format single table cell from ROW COLUMN-NAME."
-  (let ((value (plist-get row column-name)))
-    (if (member column-name '(:issue :hours))
-        (number-to-string value)
-      value)))
-
-(defun redtime--report-process (object)
-  "Extract required data from Redmine response OBJECT."
-  (let* ((activity (plist-get object :activity))
-         (issue (plist-get object :issue))
-         (user (plist-get object :user)))
-    (list :date (plist-get object :spent_on)
-          :activity (plist-get activity :name)
-          :issue (plist-get issue :id)
-          :user-id (plist-get user :id)
-          :user-name (get-decode :name user)
-          :hours (plist-get object :hours)
-          :comment (get-decode :comments object))))
-
-(defun redtime--report-build-cache (&optional filters)
-  "Fetch time entries from Redmine, with optional FILTERS."
-  (let* ((redmine-conf (redtime-get-conf))
-         (redmine-host (car redmine-conf))
-         (redmine-api-key (cdr redmine-conf))
-         (offset 0) (limit redtime-report-limit)
-         (given-filters filters)
-         (filters `(:limit ,limit :offset ,offset))
-         (entries nil))
-    (unless (null redtime--report-user)
-      (setq filters (plist-put filters :user_id redtime--report-user)))
-    (when given-filters
-      (cl-loop for (key value) on filters by #'cddr
-               do (setq filters (plist-put filters key value))))
-    (setq entries (apply 'redtime/get-time-entries filters))
-    (redtime--reset-sorting)
-    (setq redtime--report-cache (mapcar 'redtime--report-process entries))))
-
-(defun redtime-report-filter-by-user ()
-  "Show report table entries only for selected user."
-  (interactive)
-  (setq redtime--report-user (redtime--report-ask-user))
-  (redtime--report-build-cache)
-  (redtime-update-buffer))
-
-(defun redtime-report-filters-clear ()
-  "Clear reports table of any applied filters."
-  (interactive)
-  (setq redtime--report-user nil)
-  (redtime--report-build-cache)
-  (redtime-update-buffer))
-
-(defun redtime--report-ask-user ()
-  "Prompt to select redtime user from given list of suggestions."
-  (let* ((completions (redtime--user-completions))
-         (selected (completing-read "Select user:" completions nil t)))
-    (redtime--lookup-user-completion selected completions)))
-
-(defun redtime--user-completions ()
-  "Build completions list."
-  (let* ((project-id (redtime-get-project-id))
-         (redmine-conf (redtime-get-conf))
-         (redmine-host (car redmine-conf))
-         (redmine-api-key (cdr redmine-conf)))
-    (mapcar 'redtime--build-user-completion
-            (redtime/get-project-memberships project-id))))
-
-(defun redtime--lookup-user-completion (completion completions)
-  "Lookup COMPLETION in COMPLETIONS and return issue-id."
-  (cdr (assoc completion completions)))
-
-(defun redtime--build-user-completion (membership)
-  "Build single completion entry from MEMBERSHIP object."
-  (let* ((user (plist-get membership :user))
-         (user-id (plist-get user :id))
-         (user-name (get-decode :name user)))
-    (cons user-name user-id)))
 
 (provide 'redtime-report)
 ;;; redtime-report.el ends here
