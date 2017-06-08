@@ -18,7 +18,7 @@ It is highly recommended to have `flx` package installed alongside with `redtime
 
 To start tracking: `M-x redtime-start`
 
-To stop tracking and save to Redmine: `M-x redtime-start`
+To stop tracking and save to Redmine: `M-x redtime-stop`
 
 To discard currently tracked time: `M-x redtime-discard`
 
