@@ -136,4 +136,5 @@
          (issue-string (format "#%s %s" issue-id subject)))
     (cons issue-string issue-id)))
 
+(provide 'redtime)
 ;;; redtime.el ends here
